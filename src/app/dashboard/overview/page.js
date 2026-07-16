@@ -52,19 +52,31 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
 
 
-  const [telegramFlowStep, setTelegramFlowStep] = useState('phone'); // 'phone' | 'code' | 'password' | 'group'
+  const [telegramFlowStep, setTelegramFlowStep] = useState('phone'); // 'phone' | 'code' | 'password' | 'group' | 'success'
+  const [otpDigits, setOtpDigits] = useState(['', '', '', '', '']);
+  const [hasStartedAuth, setHasStartedAuth] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isConfirmDisconnectOpen, setIsConfirmDisconnectOpen] = useState(false);
 
   useEffect(() => {
     if (telStatus === 'NEED_CODE') {
       setTelegramFlowStep('code');
     } else if (telStatus === 'NEED_PASSWORD') {
       setTelegramFlowStep('password');
-    } else if (telStatus === 'CONNECTED' && telegramFlowStep !== 'group') {
-      setTelegramFlowStep('group');
+    } else if (telStatus === 'CONNECTED') {
+      if (hasStartedAuth && ['phone', 'code', 'password'].includes(telegramFlowStep)) {
+        setTelegramFlowStep('group');
+      } else if (!hasStartedAuth && telegramFlowStep !== 'group' && telegramFlowStep !== 'success') {
+        setTelegramFlowStep('active');
+      }
     } else if (telStatus === 'DISCONNECTED') {
       setTelegramFlowStep('phone');
     }
-  }, [telStatus, telegramFlowStep]);
+  }, [telStatus, telegramFlowStep, hasStartedAuth]);
+
+  useEffect(() => {
+    setVerifyCode(otpDigits.join(''));
+  }, [otpDigits]);
 
 
   useEffect(() => {
@@ -167,6 +179,8 @@ export default function DashboardPage() {
   async function connectTelegram(e) {
     if (e) e.preventDefault();
     setTelError('');
+    setHasStartedAuth(true);
+    setIsConnecting(true);
     try {
       const res = await fetch('/api/telegram/start-connect', {
         method: 'POST',
@@ -182,11 +196,14 @@ export default function DashboardPage() {
     } catch (err) {
       console.error(err);
       setTelError("Failed to make request.");
+    } finally {
+      setIsConnecting(false);
     }
   }
 
   async function submitCode() {
     setTelError('');
+    setIsConnecting(true);
     try {
       const res = await fetch('/api/telegram/submit-code', {
         method: 'POST',
@@ -202,11 +219,14 @@ export default function DashboardPage() {
     } catch (err) {
       console.error(err);
       setTelError("Request error.");
+    } finally {
+      setIsConnecting(false);
     }
   }
 
   async function submitPassword() {
     setTelError('');
+    setIsConnecting(true);
     try {
       const res = await fetch('/api/telegram/submit-password', {
         method: 'POST',
@@ -222,12 +242,15 @@ export default function DashboardPage() {
     } catch (err) {
       console.error(err);
       setTelError("Request error.");
+    } finally {
+      setIsConnecting(false);
     }
   }
 
   async function saveGroupId(e) {
     if (e) e.preventDefault();
     setTelError('');
+    setIsConnecting(true);
     try {
       const res = await fetch('/api/telegram/set-group', {
         method: 'POST',
@@ -237,24 +260,69 @@ export default function DashboardPage() {
       const data = await res.json();
       if (res.ok) {
         setTelGroupId(data.groupId);
-        setIsTelegramModalOpen(false);
-        alert('✅ Connection finalized and listening to Group ID receipts!');
+        setTelegramFlowStep('success'); // transition to Step 4
       } else {
         setTelError(data.error || "Failed to save Group ID.");
       }
     } catch (err) {
       console.error(err);
       setTelError("Request error.");
+    } finally {
+      setIsConnecting(false);
     }
   }
 
-  async function disconnectTelegram() {
-    if (!confirm("Are you sure you want to disconnect the Telegram Client? This clears active connection links.")) return;
+  const handleOtpChange = (index, value) => {
+    const cleanValue = value.replace(/[^0-9]/g, '');
+    const newDigits = [...otpDigits];
+    if (cleanValue) {
+      newDigits[index] = cleanValue[cleanValue.length - 1];
+      setOtpDigits(newDigits);
+      if (index < 4) {
+        const nextInput = document.getElementById(`otp-input-${index + 1}`);
+        if (nextInput) nextInput.focus();
+      }
+    } else {
+      newDigits[index] = '';
+      setOtpDigits(newDigits);
+    }
+  };
+
+  const handleOtpKeyDown = (index, e) => {
+    if (e.key === 'Backspace') {
+      if (!otpDigits[index] && index > 0) {
+        const newDigits = [...otpDigits];
+        newDigits[index - 1] = '';
+        setOtpDigits(newDigits);
+        const prevInput = document.getElementById(`otp-input-${index - 1}`);
+        if (prevInput) prevInput.focus();
+      }
+    }
+  };
+
+  const handleOtpPaste = (e) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData('text').trim();
+    if (/^\d{5}$/.test(pastedData)) {
+      setOtpDigits(pastedData.split(''));
+      const lastInput = document.getElementById('otp-input-4');
+      if (lastInput) lastInput.focus();
+    }
+  };
+
+  async function confirmDisconnectTelegram() {
+    setIsConfirmDisconnectOpen(false);
+    setIsConnecting(true);
     try {
       await fetch('/api/telegram/disconnect', { method: 'POST' });
       setTelStatus('DISCONNECTED');
+      setTelegramFlowStep('phone');
+      setHasStartedAuth(false);
+      setIsTelegramModalOpen(false);
     } catch (e) {
       console.error(e);
+    } finally {
+      setIsConnecting(false);
     }
   }
 
@@ -557,7 +625,7 @@ export default function DashboardPage() {
                   Configure Connection
                 </button>
                 {telStatus === 'CONNECTED' && (
-                  <button className="btn btn-secondary" style={{ borderColor: 'rgba(255,82,82,0.3)', color: '#ff5252', padding: '10px' }} onClick={disconnectTelegram}>
+                  <button className="btn btn-secondary" style={{ borderColor: 'rgba(255,82,82,0.3)', color: '#ff5252', padding: '10px' }} onClick={() => setIsConfirmDisconnectOpen(true)}>
                     Disconnect
                   </button>
                 )}
@@ -1402,28 +1470,91 @@ export default function DashboardPage() {
 
       {/* LUXURY MODAL POPUPS */}
 
+      {/* MODAL 2: CONFIRM DISCONNECT */}
+      <div className={`modal-overlay ${isConfirmDisconnectOpen ? 'active' : ''}`} onClick={() => setIsConfirmDisconnectOpen(false)} style={{ zIndex: 1100 }}>
+        <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px', border: '1px solid rgba(255, 82, 82, 0.15)' }}>
+          <div className="modal-header" style={{ borderBottom: '1px solid rgba(255, 82, 82, 0.05)' }}>
+            <h3 style={{ color: '#ff5252', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <i className="fa-solid fa-triangle-exclamation"></i>
+              Disconnect Client?
+            </h3>
+            <button className="modal-close" onClick={() => setIsConfirmDisconnectOpen(false)}>✕</button>
+          </div>
+          <div className="modal-body" style={{ padding: '24px', textAlign: 'center' }}>
+            <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', lineHeight: '1.5', marginBottom: '24px' }}>
+              Are you sure you want to disconnect the Telegram client? This will clear all active session keys and disable real-time bank receipt alert parsing.
+            </p>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button 
+                className="btn btn-primary" 
+                onClick={confirmDisconnectTelegram}
+                style={{ flex: 1, background: '#ff5252', borderColor: '#ff5252', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                disabled={isConnecting}
+              >
+                {isConnecting ? (
+                  <>
+                    <div className="spinner-ring" style={{ width: '14px', height: '14px', border: '2px solid rgba(255,255,255,0.2)', borderLeftColor: '#fff', animation: 'spin-loader 1s linear infinite' }}></div>
+                    Disconnecting...
+                  </>
+                ) : (
+                  <>
+                    <i className="fa-solid fa-circle-xmark"></i>
+                    Yes, Disconnect
+                  </>
+                )}
+              </button>
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => setIsConfirmDisconnectOpen(false)}
+                style={{ flex: 1 }}
+                disabled={isConnecting}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* MODAL 1: TELEGRAM SETUP */}
       <div className={`modal-overlay ${isTelegramModalOpen ? 'active' : ''}`} onClick={() => setIsTelegramModalOpen(false)}>
         <div className="modal-card" onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
-            <h3>📱 Telegram Client Connection</h3>
+            <h3>
+              <i className="fa-solid fa-circle-nodes" style={{ marginRight: '8px', color: 'var(--primary)' }}></i>
+              Telegram Client Connection
+            </h3>
             <button className="modal-close" onClick={() => setIsTelegramModalOpen(false)}>✕</button>
           </div>
           <div className="modal-body">
             
-            <div className="status-indicator-box" style={{ marginBottom: '25px' }}>
-              <div 
-                className="status-dot" 
-                style={{ 
-                  backgroundColor: 
-                    telStatus === 'CONNECTED' ? 'var(--status-connected)' : 
-                    (telStatus === 'CONNECTING' ? 'var(--status-connecting)' : 
-                    (telStatus.startsWith('NEED') ? 'var(--status-action)' : 'var(--status-disconnected)')) 
-                }}
-              ></div>
-              <div>
-                <div className="status-label">Telegram Status</div>
-                <div className="status-value">{telStatus}</div>
+            {/* Progress Step Indicator Bar */}
+            <div className="status-indicator-box" style={{ marginBottom: '25px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '800', letterSpacing: '0.5px' }}>Connection Progress</span>
+                <span 
+                  className={`status-indicator-tag ${
+                    telStatus === 'CONNECTED' ? 'status-active' : 
+                    (telStatus === 'CONNECTING' ? 'status-waiting' : 'status-inactive')
+                  }`}
+                  style={{
+                    fontSize: '10px', padding: '2px 8px', borderRadius: '10px', fontWeight: '850',
+                    background: telStatus === 'CONNECTED' ? 'rgba(0,230,118,0.1)' : (telStatus === 'CONNECTING' ? 'rgba(255,235,59,0.1)' : 'rgba(255,82,82,0.1)'),
+                    color: telStatus === 'CONNECTED' ? '#00e676' : (telStatus === 'CONNECTING' ? '#ffeb3b' : '#ff5252')
+                  }}
+                >
+                  {telStatus === 'CONNECTED' ? 'CONNECTED' : (telStatus === 'CONNECTING' ? 'SYNCING' : (telStatus?.startsWith?.('NEED') ? 'ACTION REQUIRED' : 'DISCONNECTED'))}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '6px', alignItems: 'center' }}>
+                <span className={`step-badge ${telegramFlowStep === 'phone' ? 'active' : ''}`} style={{ flex: 1, textAlign: 'center', fontSize: '11px', padding: '6px 4px', borderRadius: '8px', background: telegramFlowStep === 'phone' ? 'rgba(255,184,77,0.12)' : 'rgba(255,255,255,0.02)', border: telegramFlowStep === 'phone' ? '1px solid var(--primary)' : '1px solid var(--glass-border)', color: telegramFlowStep === 'phone' ? 'var(--primary)' : 'var(--text-muted)' }}>1. Phone</span>
+                <span style={{ color: 'var(--glass-border)', fontSize: '10px' }}>→</span>
+                <span className={`step-badge ${['code', 'password'].includes(telegramFlowStep) ? 'active' : ''}`} style={{ flex: 1, textAlign: 'center', fontSize: '11px', padding: '6px 4px', borderRadius: '8px', background: ['code', 'password'].includes(telegramFlowStep) ? 'rgba(255,184,77,0.12)' : 'rgba(255,255,255,0.02)', border: ['code', 'password'].includes(telegramFlowStep) ? '1px solid var(--primary)' : '1px solid var(--glass-border)', color: ['code', 'password'].includes(telegramFlowStep) ? 'var(--primary)' : 'var(--text-muted)' }}>2. OTP</span>
+                <span style={{ color: 'var(--glass-border)', fontSize: '10px' }}>→</span>
+                <span className={`step-badge ${telegramFlowStep === 'group' ? 'active' : ''}`} style={{ flex: 1, textAlign: 'center', fontSize: '11px', padding: '6px 4px', borderRadius: '8px', background: telegramFlowStep === 'group' ? 'rgba(255,184,77,0.12)' : 'rgba(255,255,255,0.02)', border: telegramFlowStep === 'group' ? '1px solid var(--primary)' : '1px solid var(--glass-border)', color: telegramFlowStep === 'group' ? 'var(--primary)' : 'var(--text-muted)' }}>3. Group</span>
+                <span style={{ color: 'var(--glass-border)', fontSize: '10px' }}>→</span>
+                <span className={`step-badge ${telegramFlowStep === 'success' ? 'active' : ''}`} style={{ flex: 1, textAlign: 'center', fontSize: '11px', padding: '6px 4px', borderRadius: '8px', background: telegramFlowStep === 'success' ? 'rgba(0,230,118,0.1)' : 'rgba(255,255,255,0.02)', border: telegramFlowStep === 'success' ? '1px solid #00e676' : '1px solid var(--glass-border)', color: telegramFlowStep === 'success' ? '#00e676' : 'var(--text-muted)' }}>4. Done</span>
               </div>
             </div>
 
@@ -1439,48 +1570,94 @@ export default function DashboardPage() {
                     value={phoneInput}
                     onChange={(e) => setPhoneInput(e.target.value)}
                     required
+                    disabled={isConnecting}
                   />
                   <div className="input-hint">Include country code prefix (e.g. +855 for Cambodia).</div>
                 </div>
                 {telError && <div className="error-msg" style={{ marginBottom: '15px' }}>{telError}</div>}
-                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '10px' }}>
-                  Connect Client
+                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} disabled={isConnecting}>
+                  {isConnecting ? (
+                    <>
+                      <div className="spinner-ring" style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.2)', borderLeftColor: '#fff', animation: 'spin-loader 1s linear infinite' }}></div>
+                      Initiating Connection...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fa-solid fa-arrow-right-to-bracket"></i>
+                      Verify Phone Number
+                    </>
+                  )}
                 </button>
               </form>
             )}
 
             {/* Connecting Spinner State */}
             {telStatus === 'CONNECTING' && (
-              <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                <div className="branding-icon animate-pulse" style={{ fontSize: '40px', marginBottom: '15px' }}>⚡</div>
-                <h4>Establishing Telegram Connection...</h4>
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '5px' }}>Checking session credentials and generating secure keys.</p>
+              <div style={{ textAlign: 'center', padding: '30px 0' }}>
+                <div className="spinner-ring" style={{ margin: '0 auto 20px auto' }}></div>
+                <h4 style={{ fontWeight: '700' }}>Establishing Secure Session...</h4>
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '8px' }}>Generating verification parameters. Please monitor your Telegram App.</p>
               </div>
             )}
 
             {/* Step 2: Verification Code */}
             {telStatus === 'NEED_CODE' && (
               <div className="action-panel">
-                <h4>📩 Step 2: Verification Code Required</h4>
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '15px' }}>Check your official Telegram App messages on other active devices for a 6-digit verification code.</p>
-                <div className="form-group">
-                  <input 
-                    type="text" 
-                    className="input-control" 
-                    placeholder="Enter code sent via Telegram" 
-                    value={verifyCode}
-                    onChange={(e) => setVerifyCode(e.target.value)}
-                  />
+                <h4>
+                  <i className="fa-solid fa-envelope-open-text" style={{ marginRight: '8px', color: 'var(--primary)' }}></i>
+                  Step 2: Enter Verification OTP
+                </h4>
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '15px' }}>
+                  Please enter the **5-digit code** sent to your official Telegram app.
+                </p>
+                
+                {/* 5 digit OTP inputs columns */}
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', margin: '24px 0' }}>
+                  {[0, 1, 2, 3, 4].map(idx => (
+                    <input 
+                      key={idx}
+                      type="text" 
+                      id={`otp-input-${idx}`}
+                      className="otp-digit-field"
+                      maxLength={1}
+                      value={otpDigits[idx]}
+                      onChange={(e) => handleOtpChange(idx, e.target.value)}
+                      onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                      onPaste={idx === 0 ? handleOtpPaste : undefined}
+                      style={{
+                        width: '46px', height: '54px', borderRadius: '10px',
+                        border: '1px solid var(--glass-border)', background: 'rgba(0,0,0,0.2)',
+                        color: '#fff', fontSize: '20px', fontWeight: 'bold', textAlign: 'center', outline: 'none'
+                      }}
+                      disabled={isConnecting}
+                    />
+                  ))}
                 </div>
+
                 {telError && <div className="error-msg" style={{ marginBottom: '15px' }}>{telError}</div>}
-                <button className="btn btn-primary" style={{ width: '100%', marginTop: '15px' }} onClick={submitCode}>Verify Code</button>
+                <button className="btn btn-primary" style={{ width: '100%', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} onClick={submitCode} disabled={isConnecting}>
+                  {isConnecting ? (
+                    <>
+                      <div className="spinner-ring" style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.2)', borderLeftColor: '#fff', animation: 'spin-loader 1s linear infinite' }}></div>
+                      Verifying OTP...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fa-solid fa-shield-halved"></i>
+                      Connect & Verify Process
+                    </>
+                  )}
+                </button>
               </div>
             )}
 
             {/* Step 2.5: 2FA Password */}
             {telStatus === 'NEED_PASSWORD' && (
               <div className="action-panel">
-                <h4>🔐 Two-Factor (2FA) Password</h4>
+                <h4>
+                  <i className="fa-solid fa-key" style={{ marginRight: '8px', color: 'var(--primary)' }}></i>
+                  Two-Factor (2FA) Password
+                </h4>
                 <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '15px' }}>Your Telegram account has 2-Step Verification enabled. Enter your password below.</p>
                 <div className="form-group">
                   <input 
@@ -1489,21 +1666,37 @@ export default function DashboardPage() {
                     placeholder="Enter 2FA password" 
                     value={passwordInput}
                     onChange={(e) => setPasswordInput(e.target.value)}
+                    disabled={isConnecting}
                   />
                 </div>
                 {telError && <div className="error-msg" style={{ marginBottom: '15px' }}>{telError}</div>}
-                <button className="btn btn-primary" style={{ width: '100%', marginTop: '15px' }} onClick={submitPassword}>Verify 2FA Password</button>
+                <button className="btn btn-primary" style={{ width: '100%', marginTop: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} onClick={submitPassword} disabled={isConnecting}>
+                  {isConnecting ? (
+                    <>
+                      <div className="spinner-ring" style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.2)', borderLeftColor: '#fff', animation: 'spin-loader 1s linear infinite' }}></div>
+                      Verifying 2FA Password...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fa-solid fa-lock"></i>
+                      Verify 2FA Password
+                    </>
+                  )}
+                </button>
               </div>
             )}
 
             {/* Step 3: Group ID Config */}
-            {telStatus === 'CONNECTED' && (
+            {telStatus === 'CONNECTED' && telegramFlowStep !== 'success' && (
               <div className="action-panel">
                 {telegramFlowStep === 'group' ? (
                   <form onSubmit={saveGroupId}>
-                    <h4>📢 Step 3: Set Group ID</h4>
+                    <h4>
+                      <i className="fa-solid fa-bullhorn" style={{ marginRight: '8px', color: 'var(--primary)' }}></i>
+                      Step 3: Set Listening Group ID
+                    </h4>
                     <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '15px' }}>
-                      Your Telegram client is connected! Now, enter the target Telegram Group ID containing the ABA transaction bot receipt messages.
+                      Client connected successfully! Enter the Telegram Chat Group ID containing the bank receipt alerts.
                     </p>
                     <div className="form-group">
                       <label>Telegram Group ID</label>
@@ -1514,27 +1707,79 @@ export default function DashboardPage() {
                         value={groupInput}
                         onChange={(e) => setGroupInput(e.target.value)}
                         required
+                        disabled={isConnecting}
                       />
                     </div>
                     {telError && <div className="error-msg" style={{ marginBottom: '15px' }}>{telError}</div>}
                     <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-                      <button type="submit" className="btn btn-primary" style={{ flex: 2 }}>
-                        Save Group ID & Finalize
+                      <button type="submit" className="btn btn-primary" style={{ flex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} disabled={isConnecting}>
+                        {isConnecting ? (
+                          <>
+                            <div className="spinner-ring" style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.2)', borderLeftColor: '#fff', animation: 'spin-loader 1s linear infinite' }}></div>
+                            Finalizing...
+                          </>
+                        ) : (
+                          <>
+                            <i className="fa-solid fa-floppy-disk"></i>
+                            Save Group ID & Finalize
+                          </>
+                        )}
                       </button>
-                      <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setTelegramFlowStep('active')}>Cancel</button>
+                      <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setTelegramFlowStep('active')} disabled={isConnecting}>Cancel</button>
                     </div>
                   </form>
                 ) : (
                   <div>
                     <div style={{ marginBottom: '24px', padding: '15px', background: 'rgba(0,230,118,0.06)', border: '1px solid rgba(0,230,118,0.15)', borderRadius: '12px', fontSize: '14px' }}>
-                      ✅ Active and listening to Telegram Group ID: <strong>{telGroupId}</strong>
+                      <i className="fa-solid fa-circle-check" style={{ color: '#00e676', marginRight: '6px' }}></i> Active and listening to Telegram Group ID: <strong>{telGroupId}</strong>
                     </div>
                     <div style={{ display: 'flex', gap: '10px' }}>
                       <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setTelegramFlowStep('group')}>Update Group ID</button>
-                      <button className="btn btn-disconnect" style={{ flex: 1 }} onClick={disconnectTelegram}>Disconnect Client</button>
+                      <button className="btn btn-disconnect" style={{ flex: 1 }} onClick={() => setIsConfirmDisconnectOpen(true)}>Disconnect Client</button>
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Step 4: Success confirmation screen */}
+            {telegramFlowStep === 'success' && (
+              <div className="action-panel" style={{ textAlign: 'center', padding: '15px 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '15px' }}>
+                  <i className="fa-solid fa-circle-check animate-pulse" style={{ fontSize: '54px', color: '#00e676' }}></i>
+                </div>
+                <h4 style={{ fontSize: '18px', fontWeight: '800', color: '#00e676' }}>Connection Successful!</h4>
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '8px', marginBottom: '24px', lineHeight: '1.4' }}>
+                  Your Telegram Listener client has been authenticated successfully and synced to match ABA bot transactions.
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--glass-border)', padding: '16px', borderRadius: '12px', textAlign: 'left', marginBottom: '25px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Connection Status</span>
+                    <strong style={{ color: '#00e676' }}>CONNECTED 🟢</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', borderTop: '1px dashed var(--glass-border)', paddingTop: '8px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Listening Group ID</span>
+                    <strong style={{ color: '#fff' }}>{groupInput || telGroupId}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', borderTop: '1px dashed var(--glass-border)', paddingTop: '8px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Verification Speed</span>
+                    <strong style={{ color: 'var(--primary)' }}>Real-Time ⚡</strong>
+                  </div>
+                </div>
+
+                <button 
+                  className="btn btn-primary" 
+                  onClick={() => {
+                    setHasStartedAuth(false);
+                    setTelegramFlowStep('active');
+                    setIsTelegramModalOpen(false);
+                  }} 
+                  style={{ width: '100%', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                >
+                  <i className="fa-solid fa-circle-check"></i>
+                  Done & Close Console
+                </button>
               </div>
             )}
 
@@ -2655,6 +2900,29 @@ export default function DashboardPage() {
 
         .animate-fade-in {
           animation: fadeIn 0.4s ease forwards;
+        }
+
+        .spinner-ring {
+          width: 48px;
+          height: 48px;
+          border: 4px solid rgba(255, 184, 77, 0.1);
+          border-left-color: var(--primary);
+          border-radius: 50%;
+          animation: spin-loader 1s linear infinite;
+        }
+
+        @keyframes spin-loader {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+
+        .otp-digit-field {
+          transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .otp-digit-field:focus {
+          border-color: var(--primary) !important;
+          background: rgba(255, 184, 77, 0.08) !important;
+          box-shadow: 0 0 12px var(--primary-glow) !important;
         }
       `}} />
     </div>
