@@ -262,15 +262,18 @@ export async function startTelegramConnection(user, phoneNumber, newGroupId) {
       
       const me = await client.getMe();
       user.telegramId = me.id.toString();
+      // Save the session string immediately — this is what allows auto-reconnect
+      // and must be cleared on disconnect
       user.telegramSession = client.session.save();
 
       await streamerColl.updateOne({ username }, { 
         $set: { 
           telegramId: user.telegramId, 
-          telegramSession: user.telegramSession,
+          telegramSession: user.telegramSession,  // persisted StringSession
           telegramStatus: "CONNECTED"
         } 
       });
+      console.log(`💾 telegramSession saved to DB for ${username}`);
 
       setupTelegramListener(client, user);
     }).catch(async (err) => {

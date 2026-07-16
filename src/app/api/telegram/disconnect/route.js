@@ -9,29 +9,46 @@ export async function POST() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const streamerColl = await getStreamerCollection();
-  const user = await streamerColl.findOne({ username });
-  if (!user) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
-  }
-
-  if (activeClients[username]) {
-    try {
-      await activeClients[username].destroy();
-    } catch (e) {
-      console.error("Telegram shutdown error:", e);
+  try {
+    // 1. Destroy in-memory client if it exists (local dev / long-running instances)
+    if (activeClients[username]) {
+      try {
+        await activeClients[username].disconnect();
+      } catch (e) {
+        console.warn("Telegram disconnect warning:", e.message);
+      }
+      try {
+        await activeClients[username].destroy();
+      } catch (e) {
+        console.warn("Telegram destroy warning:", e.message);
+      }
+      delete activeClients[username];
     }
-    delete activeClients[username];
+
+    // 2. Clear in-memory connection state
+    connectionStates[username] = { status: "DISCONNECTED", error: "", groupId: "" };
+
+    // 3. Wipe ALL Telegram session data from MongoDB
+    //    This is the critical step for Vercel: even if no in-memory client exists,
+    //    clearing telegramSession prevents auto-reconnect on next cold start.
+    const streamerColl = await getStreamerCollection();
+    await streamerColl.updateOne(
+      { username },
+      {
+        $set: {
+          telegramSession: "",   // Destroys the saved StringSession — cannot reconnect without re-auth
+          telegramId: "",
+          telegramStatus: "DISCONNECTED",
+          groupId: "",
+        }
+      }
+    );
+
+    console.log(`✅ Telegram fully disconnected and session wiped for ${username}`);
+    return NextResponse.json({ success: true, message: "Telegram client disconnected and session destroyed." });
+
+  } catch (err) {
+    console.error("Disconnect error:", err);
+    return NextResponse.json({ error: "Failed to disconnect cleanly" }, { status: 500 });
   }
-  connectionStates[username] = { status: "DISCONNECTED", error: "", groupId: "" };
-
-  await streamerColl.updateOne({ username }, { 
-    $set: { 
-      telegramSession: "", 
-      telegramId: "",
-      telegramStatus: "DISCONNECTED"
-    } 
-  });
-
-  return NextResponse.json({ success: true, message: "Telegram client disconnected." });
 }
