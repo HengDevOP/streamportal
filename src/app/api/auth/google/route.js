@@ -10,7 +10,7 @@ export async function GET(request) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const url = new URL(request.url);
-  const redirectUri = `${url.protocol}//${url.host}/api/auth/google`;
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI || `${url.protocol}//${url.host}/api/auth/google`;
 
   if (error) {
     console.error("Google OAuth error parameter:", error);
