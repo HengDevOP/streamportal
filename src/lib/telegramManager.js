@@ -342,4 +342,67 @@ export async function startTelegramConnection(user, phoneNumber, newGroupId) {
   }
 }
 
+export async function autoConnectUser(username) {
+  if (activeClients[username]) {
+    // Already has active or connecting client
+    return;
+  }
+  try {
+    const streamerColl = await getStreamerCollection();
+    const user = await streamerColl.findOne({ username });
+    if (!user || !user.telegramSession) return;
+
+    console.log(`[AutoConnect] Spinning up Telegram client for ${username} dynamically...`);
+    
+    const client = new TelegramClient(new StringSession(user.telegramSession), apiId, apiHash, {
+      connectionRetries: 5,
+    });
+
+    activeClients[username] = client;
+    connectionStates[username] = {
+      status: "CONNECTING",
+      error: "",
+      groupId: user.groupId
+    };
+    await streamerColl.updateOne({ username }, { $set: { telegramStatus: "CONNECTING" } });
+
+    await client.start({
+      catchUp: true,
+      onError: (err) => {
+        console.error(`Dynamic auto-connect error for ${username}:`, err);
+        connectionStates[username].status = "ERROR";
+        connectionStates[username].error = err.message;
+      }
+    });
+
+    connectionStates[username].status = "CONNECTED";
+    const me = await client.getMe();
+    user.telegramId = me.id.toString();
+    await streamerColl.updateOne({ username }, { 
+      $set: { 
+        telegramId: user.telegramId,
+        telegramStatus: "CONNECTED"
+      } 
+    });
+
+    console.log(`✅ Dynamic auto-connect successful for ${username}!`);
+    setupTelegramListener(client, user);
+
+  } catch (e) {
+    console.error(`❌ Dynamic auto-connect failed for ${username}:`, e);
+    connectionStates[username] = {
+      status: "DISCONNECTED",
+      error: e.message,
+      groupId: ""
+    };
+    await streamerColl.updateOne({ username }, { $set: { telegramStatus: "DISCONNECTED" } });
+    if (activeClients[username]) {
+      try {
+        await activeClients[username].destroy();
+      } catch (err) {}
+      delete activeClients[username];
+    }
+  }
+}
+
 export { activeClients, connectionStates, lastPreviews, pendingDonations };

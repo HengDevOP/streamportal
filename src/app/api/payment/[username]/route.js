@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getTransactionCollection } from "@/lib/db";
-import { lastPreviews } from "@/lib/telegramManager";
+import { lastPreviews, autoConnectUser } from "@/lib/telegramManager";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +8,11 @@ export async function GET(request, { params }) {
   try {
     const { username } = await params;
     const targetUsername = username.toLowerCase();
+
+    // Keep-alive: Auto-connect the Telegram listener dynamically if it's disconnected/recycled
+    autoConnectUser(targetUsername).catch(err => {
+      console.warn("Background auto-connect keep-alive warning:", err.message);
+    });
 
     // Accept optional ?since=<timestamp> to return all new transactions after that point
     const { searchParams } = new URL(request.url);

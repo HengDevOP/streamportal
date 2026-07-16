@@ -15,15 +15,45 @@ export async function GET() {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  const state = connectionStates[username] || { 
-    status: user.telegramStatus || "DISCONNECTED", 
-    error: "", 
-    groupId: user.groupId || "" 
-  };
+  // Dynamically check live active Client connection status
+  const client = activeClients[username];
+  let actualStatus = "DISCONNECTED";
+
+  if (client) {
+    // GramJS client.connected is the ground truth
+    if (client.connected) {
+      actualStatus = "CONNECTED";
+    } else {
+      actualStatus = "DISCONNECTED";
+    }
+  } else {
+    // Fallback to DB status (Vercel serverless / cold start sync)
+    actualStatus = user.telegramStatus || "DISCONNECTED";
+  }
+
+  // Update in-memory cache
+  if (connectionStates[username]) {
+    connectionStates[username].status = actualStatus;
+  } else {
+    connectionStates[username] = {
+      status: actualStatus,
+      error: "",
+      groupId: user.groupId || ""
+    };
+  }
+
+  // Update MongoDB status if mismatch detected
+  if (user.telegramStatus !== actualStatus) {
+    await streamerColl.updateOne(
+      { username },
+      { $set: { telegramStatus: actualStatus } }
+    );
+    console.log(`🔄 Synced database status for ${username} to: ${actualStatus}`);
+  }
 
   return NextResponse.json({
-    status: state.status,
-    error: state.error,
-    groupId: state.groupId || user.groupId || ""
+    status: actualStatus,
+    error: connectionStates[username]?.error || "",
+    groupId: connectionStates[username]?.groupId || user.groupId || ""
   });
 }
