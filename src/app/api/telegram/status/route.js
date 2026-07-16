@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { getStreamerCollection } from "@/lib/db";
-import { connectionStates } from "@/lib/telegramManager";
+import { connectionStates, activeClients } from "@/lib/telegramManager";
 
 export async function GET() {
   const username = await getSession();
