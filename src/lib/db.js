@@ -56,6 +56,13 @@ async function ensureIndexes(db) {
     await db.collection("streamer").createIndex({ username: 1 }, { unique: true });
     await db.collection("transaction").createIndex({ streamer: 1, time: -1 });
     await db.collection("transaction").createIndex({ time: 1 });
+    // pending_donation: fast lookup by streamer username
+    await db.collection("pending_donation").createIndex({ username: 1, time: 1 });
+    // TTL index: MongoDB auto-deletes pending donations after 7200 seconds (2 hours)
+    await db.collection("pending_donation").createIndex(
+      { time: 1 },
+      { expireAfterSeconds: 7200, name: "pending_donation_ttl" }
+    );
     isIndexed = true;
   } catch (err) {
     // Non-fatal: indexes will be created on next boot
@@ -78,4 +85,9 @@ export async function getStreamerCollection() {
 export async function getTransactionCollection() {
   const db = await getDb();
   return db.collection("transaction");
+}
+
+export async function getPendingDonationCollection() {
+  const db = await getDb();
+  return db.collection("pending_donation");
 }

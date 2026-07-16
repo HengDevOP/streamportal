@@ -1,7 +1,7 @@
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
 import { NewMessage } from "telegram/events";
-import { getStreamerCollection, getTransactionCollection } from "./db";
+import { getStreamerCollection, getTransactionCollection, getPendingDonationCollection } from "./db";
 
 const apiId = 32427800;
 const apiHash = "8f8e70605256a4e08a81bd5e45481ceb";
@@ -99,25 +99,45 @@ export function setupTelegramListener(client, user) {
     ) {
       const data = parseABA(text);
 
-      cleanupPendingDonations();
-      
+      // --- MongoDB-backed pending donation lookup (Vercel-safe) ---
+      // In-memory pendingDonations won't work on Vercel because each
+      // serverless Lambda instance has a separate memory space.
       const normalize = (s) => s.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-      const matchIndex = pendingDonations.findIndex(
-        (p) => p.username === user.username && normalize(p.bankName) === normalize(data.name)
-      );
 
-      if (matchIndex !== -1) {
-        // Matched: use viewer's custom message
-        const matched = pendingDonations[matchIndex];
-        data.message = matched.message || "";
-        data.streamer = matched.username;
-        pendingDonations.splice(matchIndex, 1);
-        console.log(`✅ Matched pending donation for name: "${data.name}" -> message: "${data.message}"`);
-      } else {
-        // Unmatched: plain donation — TTS will read default template
+      try {
+        const pendingColl = await getPendingDonationCollection();
+
+        // Find oldest matching pending donation for this streamer
+        const allPending = await pendingColl
+          .find({ username: user.username })
+          .sort({ time: 1 })
+          .toArray();
+
+        const matchedPending = allPending.find(
+          (p) => normalize(p.bankName) === normalize(data.name)
+        );
+
+        if (matchedPending) {
+          data.message = matchedPending.message || "";
+          data.streamer = matchedPending.username;
+          // Delete the matched record so it's not reused for the next payment
+          await pendingColl.deleteOne({ _id: matchedPending._id });
+          console.log(`✅ Matched pending donation for name: "${data.name}" -> message: "${data.message}"`);
+        } else {
+          // No viewer message registered — fire a plain alert
+          data.message = "";
+          data.streamer = user.username;
+          console.log(`📢 Unmatched donation from "${data.name}" — firing plain alert for ${user.username}`);
+        }
+
+        // Clean up stale pending donations older than 1 hour
+        const oneHourAgo = Date.now() - 60 * 60 * 1000;
+        await pendingColl.deleteMany({ username: user.username, time: { $lt: oneHourAgo } });
+
+      } catch (lookupErr) {
+        console.error("Error looking up pending donation from MongoDB:", lookupErr);
         data.message = "";
         data.streamer = user.username;
-        console.log(`📢 Unmatched donation from "${data.name}" — firing plain alert for ${user.username}`);
       }
 
       try {

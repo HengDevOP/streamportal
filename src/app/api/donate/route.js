@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { pendingDonations } from "@/lib/telegramManager";
+import { getPendingDonationCollection } from "@/lib/db";
 
 export async function POST(request) {
   try {
@@ -9,12 +9,17 @@ export async function POST(request) {
       return NextResponse.json({ error: "Bank name is required" }, { status: 400 });
     }
 
-    const oneHourAgo = Date.now() - 60 * 60 * 1000;
-    const kept = pendingDonations.filter((p) => p.time > oneHourAgo);
-    pendingDonations.length = 0;
-    pendingDonations.push(...kept);
+    const pendingColl = await getPendingDonationCollection();
 
-    pendingDonations.push({
+    // Remove stale entries older than 1 hour for this streamer
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    await pendingColl.deleteMany({
+      username: (username || "").toLowerCase(),
+      time: { $lt: oneHourAgo },
+    });
+
+    // Insert the new pending donation into MongoDB
+    await pendingColl.insertOne({
       username: (username || "streamer").toLowerCase(),
       message: message || "",
       bankName: bankName.trim(),
@@ -22,7 +27,7 @@ export async function POST(request) {
     });
 
     console.log(
-      `Saved pending donation from bank: "${bankName}" for streamer: "${username}" with msg: "${message}"`
+      `💾 Saved pending donation to MongoDB — bank: "${bankName}" | streamer: "${username}" | msg: "${message}"`
     );
 
     return NextResponse.json({
