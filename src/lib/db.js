@@ -1,21 +1,53 @@
 import { MongoClient } from 'mongodb';
 
-const uri = process.env.MONGODB_URI;
+// Connection cache across serverless warm invocations
+let client = null;
+let clientPromise = null;
 
-if (!uri) {
-  throw new Error('Invalid/Missing environment variable: "MONGODB_URI"');
+export function getMongoClientPromise() {
+  const uri = process.env.MONGODB_URI;
+
+  if (!uri) {
+    throw new Error('Missing environment variable: "MONGODB_URI". Set it in your Vercel project settings or .env file.');
+  }
+
+  // Reuse the existing connection promise if already established
+  if (clientPromise) {
+    return clientPromise;
+  }
+
+  // In development, use a global variable to preserve the connection
+  // across hot reloads (avoids exhausting DB connections during dev)
+  if (process.env.NODE_ENV === 'development') {
+    if (!global._mongoClientPromise) {
+      client = new MongoClient(uri, {
+        connectTimeoutMS: 10000,
+        serverSelectionTimeoutMS: 10000,
+        maxPoolSize: 5,
+      });
+      global._mongoClientPromise = client.connect();
+    }
+    clientPromise = global._mongoClientPromise;
+  } else {
+    // Production (Vercel): always create a fresh client per cold start
+    client = new MongoClient(uri, {
+      connectTimeoutMS: 10000,
+      serverSelectionTimeoutMS: 10000,
+      maxPoolSize: 10,
+    });
+    clientPromise = client.connect();
+  }
+
+  return clientPromise;
 }
 
-if (!global._mongoClientPromise) {
-  const client = new MongoClient(uri, {
-    connectTimeoutMS: 5000,
-    serverSelectionTimeoutMS: 5000,
-  });
-  global._mongoClientPromise = client.connect();
-}
-const clientPromise = global._mongoClientPromise;
+// Legacy compatibility shim — allows `import clientPromise from '@/lib/db'` to still work
+const clientPromiseShim = {
+  then: (...args) => getMongoClientPromise().then(...args),
+  catch: (...args) => getMongoClientPromise().catch(...args),
+};
 
-export default clientPromise;
+export default clientPromiseShim;
 
 let isIndexed = false;
 async function ensureIndexes(db) {
@@ -25,14 +57,14 @@ async function ensureIndexes(db) {
     await db.collection("transaction").createIndex({ streamer: 1, time: -1 });
     await db.collection("transaction").createIndex({ time: 1 });
     isIndexed = true;
-    console.log("MongoDB indexes ensured successfully.");
   } catch (err) {
-    console.error("Failed to create MongoDB indexes:", err);
+    // Non-fatal: indexes will be created on next boot
+    console.warn("MongoDB index creation warning:", err.message);
   }
 }
 
 export async function getDb() {
-  const conn = await clientPromise;
+  const conn = await getMongoClientPromise();
   const db = conn.db();
   await ensureIndexes(db);
   return db;

@@ -14,7 +14,7 @@ export default function DonatePage() {
   const [loading, setLoading] = useState(false);
 
   const [step, setStep] = useState('input'); // 'input' | 'pay'
-  const [qrUrl, setQrUrl] = useState('');
+  const [qrUrl, setQrUrl] = useState('/uploads/qrs/khqr.png');
 
   useEffect(() => {
     async function loadStreamerConfig() {
@@ -22,12 +22,14 @@ export default function DonatePage() {
         const res = await fetch(`/api/overlay/config/${username}`);
         if (res.ok) {
           const data = await res.json();
+          // Use DB qrUrl if present, otherwise keep the default khqr.png
           if (data.alertConfig && data.alertConfig.qrUrl) {
             setQrUrl(data.alertConfig.qrUrl);
           }
         }
+        // If fetch fails or returns non-OK, the default khqr.png stays
       } catch (err) {
-        console.error("Failed to load streamer QR code configuration:", err);
+        console.warn("Failed to load streamer QR code configuration, using default:", err.message);
       }
     }
     loadStreamerConfig();
