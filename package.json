@@ -1,0 +1,25 @@
+{
+  "name": "streamintergration",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "rm -rf .next && next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "dotenv": "^17.4.2",
+    "input": "^1.0.1",
+    "mongodb": "^7.3.0",
+    "qrcode": "^1.5.4",
+    "telegram": "^2.26.22"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^15.1.0"
+  }
+}
