@@ -1,3 +1,4 @@
+import "./silence-warning";
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
 import { NewMessage } from "telegram/events";
@@ -44,13 +45,24 @@ function parseABA(text) {
   const amount = parseFloat(amountMatch?.[2]?.replace(/,/g, "") || "0");
   const name = text.match(/paid by (.+?) \(\*\d+\)/i)?.[1];
   const amountUSD = currency === '៛' ? amount / KHR_TO_USD : amount;
+
+  // Enforce strictly unique/increasing timestamps in milliseconds
+  if (!global._lastTransactionTime) {
+    global._lastTransactionTime = 0;
+  }
+  let now = Date.now();
+  if (now <= global._lastTransactionTime) {
+    now = global._lastTransactionTime + 1;
+  }
+  global._lastTransactionTime = now;
+
   return {
     name: name || "Unknown",
     amount,
     amountUSD: parseFloat(amountUSD.toFixed(4)),
     currency,
     raw: text,
-    time: Date.now()
+    time: now
   };
 }
 

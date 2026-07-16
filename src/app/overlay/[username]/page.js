@@ -21,6 +21,11 @@ export default function OverlayPage() {
   const activeTimeoutRef = useRef(null);
   const audioUnlockedRef = useRef(false);
   const isFirstPollRef = useRef(true);
+  // Queue to hold incoming donations that arrive while an alert is already playing
+  const alertQueueRef = useRef([]);
+  const isPlayingAlertRef = useRef(false);
+  // Set to keep track of already processed alerts (using _id or time)
+  const processedIdsRef = useRef(new Set());
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -105,191 +110,206 @@ export default function OverlayPage() {
     link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(config.fontFamily)}:wght@400;700;900&display=swap`;
   }, [config]);
 
-  // Stable triggerAlert always has fresh config via useCallback
-  const triggerAlert = useCallback((donation) => {
+  // Play a single donation alert — called by the queue processor
+  const playAlert = useCallback((donation) => {
     if (!config) return;
 
-    if (activeTimeoutRef.current) {
-      clearTimeout(activeTimeoutRef.current);
+    setActiveAlert(donation);
+    setVisible(true);
+    isPlayingAlertRef.current = true;
+
+    const hasCustomMessage = !!(donation.message && donation.message.trim());
+
+    // Dynamic AudioContext resume to unlock background stream audio engines inside OBS
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        const actx = new AudioCtx();
+        if (actx.state === 'suspended') actx.resume();
+      }
+    } catch (e) {}
+
+    // Try to play chime if configured or default to /uploads/sounds/sound.mp3
+    let alertAudio = null;
+    const soundPath = (!config.soundUrl || config.soundUrl === '/sound.mp3') ? '/uploads/sounds/sound.mp3' : config.soundUrl;
+    try {
+      const rawSoundUrl = soundPath.split('?')[0];
+      const absoluteSoundUrl = new URL(rawSoundUrl, window.location.origin).toString();
+      alertAudio = new Audio(`${absoluteSoundUrl}?cb=${Date.now()}`);
+      alertAudio.volume = 1.0;
+    } catch (e) {
+      alertAudio = null;
     }
 
-    setVisible(false);
+    const speak = () => {
+      if (!config.ttsEnabled) return;
 
-    setTimeout(() => {
-      setActiveAlert(donation);
-      setVisible(true);
+      const messageText = hasCustomMessage ? donation.message.trim() : '';
+      const ttsTemplate = config.ttsTemplate || '{donator} donated {amount} through superchat.';
+      const amountStr = `${donation.amount} ${donation.currency === '$' ? 'dollars' : 'riel'}`;
 
-      const hasCustomMessage = !!(donation.message && donation.message.trim());
+      let ttsText = ttsTemplate
+        .replace(/{donator}/g, donation.name)
+        .replace(/{name}/g, donation.name)
+        .replace(/{amount}/g, amountStr);
 
-      // Dynamic AudioContext resume to unlock background stream audio engines inside OBS
-      try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtx) {
-          const actx = new AudioCtx();
-          if (actx.state === 'suspended') actx.resume();
-        }
-      } catch (e) {}
-
-      // Try to play chime if configured or default to /uploads/sounds/sound.mp3
-      let alertAudio = null;
-      const soundPath = (!config.soundUrl || config.soundUrl === '/sound.mp3') ? '/uploads/sounds/sound.mp3' : config.soundUrl;
-      try {
-        const rawSoundUrl = soundPath.split('?')[0];
-        const absoluteSoundUrl = new URL(rawSoundUrl, window.location.origin).toString();
-        alertAudio = new Audio(`${absoluteSoundUrl}?cb=${Date.now()}`);
-        alertAudio.volume = 1.0;
-      } catch (e) {
-        console.error('Chime init error:', e);
-        alertAudio = null;
+      if (messageText) {
+        ttsText = `${ttsText}. ${messageText}`;
       }
 
-      const speak = () => {
-        if (!config.ttsEnabled) return;
+      const voicePref = config.ttsVoiceName || 'female';
 
-        const messageText = hasCustomMessage ? donation.message.trim() : '';
-        const ttsTemplate = config.ttsTemplate || '{donator} donated {amount} through superchat.';
-        const amountStr = `${donation.amount} ${donation.currency === '$' ? 'dollars' : 'riel'}`;
-
-        let ttsText = ttsTemplate
-          .replace(/{donator}/g, donation.name)
-          .replace(/{name}/g, donation.name)
-          .replace(/{amount}/g, amountStr);
-
-        if (messageText) {
-          ttsText = `${ttsText}. ${messageText}`;
-        }
-
-        const voicePref = config.ttsVoiceName || 'female';
-
-        // Helper to speak using browser's speechSynthesis (primarily for male voice option)
-        const speakSpeechSynthesis = (preferMale = false) => {
-          if (typeof window !== 'undefined' && window.speechSynthesis) {
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(ttsText);
-            const voices = window.speechSynthesis.getVoices();
-            
-            if (preferMale) {
-              const maleVoice = voices.find(v => 
-                v.lang.startsWith('en') && 
-                (v.name.toLowerCase().includes('male') || 
-                 v.name.toLowerCase().includes('david') || 
-                 v.name.toLowerCase().includes('guy') || 
-                 v.name.toLowerCase().includes('microsoft') || 
-                 v.name.toLowerCase().includes('google us english'))
-              );
-              if (maleVoice) {
-                utterance.voice = maleVoice;
-              } else {
-                return false; // No male voice found, use fallback
-              }
-            } else {
-              // Female voice
-              const femaleVoice = voices.find(v => 
-                v.lang.startsWith('en') && 
-                (v.name.toLowerCase().includes('female') || 
-                 v.name.toLowerCase().includes('zira') || 
-                 v.name.toLowerCase().includes('google us english'))
-              );
-              if (femaleVoice) {
-                utterance.voice = femaleVoice;
-              }
-            }
-            
-            utterance.rate = config.ttsRate || 0.95;
-            utterance.pitch = config.ttsPitch || 1.0;
-            
-            utterance.onstart = () => {
-              audioUnlockedRef.current = true;
-              setAudioUnlocked(true);
-            };
-            
-            window.speechSynthesis.speak(utterance);
-            return true;
+      const speakSpeechSynthesis = (preferMale = false) => {
+        if (typeof window !== 'undefined' && window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(ttsText);
+          const voices = window.speechSynthesis.getVoices();
+          
+          if (preferMale) {
+            const maleVoice = voices.find(v => 
+              v.lang.startsWith('en') && 
+              (v.name.toLowerCase().includes('male') || 
+               v.name.toLowerCase().includes('david') || 
+               v.name.toLowerCase().includes('guy') || 
+               v.name.toLowerCase().includes('microsoft') || 
+               v.name.toLowerCase().includes('google us english'))
+            );
+            if (maleVoice) { utterance.voice = maleVoice; } else { return false; }
+          } else {
+            const femaleVoice = voices.find(v => 
+              v.lang.startsWith('en') && 
+              (v.name.toLowerCase().includes('female') || 
+               v.name.toLowerCase().includes('zira') || 
+               v.name.toLowerCase().includes('google us english'))
+            );
+            if (femaleVoice) { utterance.voice = femaleVoice; }
           }
-          return false;
-        };
-
-        // If user wants male voice, try speech synthesis first
-        if (voicePref === 'male') {
-          const success = speakSpeechSynthesis(true);
-          if (success) return;
+          
+          utterance.rate = config.ttsRate || 0.95;
+          utterance.pitch = config.ttsPitch || 1.0;
+          utterance.onstart = () => { audioUnlockedRef.current = true; setAudioUnlocked(true); };
+          window.speechSynthesis.speak(utterance);
+          return true;
         }
-
-        // Default or Fallback to Proxy Google TTS (Absolute path resolution)
-        try {
-          const absoluteTtsUrl = new URL(`/api/tts?text=${encodeURIComponent(ttsText)}`, window.location.origin).toString();
-          const ttsAudio = new Audio(absoluteTtsUrl);
-          ttsAudio.volume = 1.0;
-          ttsAudio.play()
-            .then(() => {
-              audioUnlockedRef.current = true;
-              setAudioUnlocked(true);
-            })
-            .catch(e => {
-              console.warn('TTS proxy play failed, trying speechSynthesis fallback:', e);
-              speakSpeechSynthesis(false);
-            });
-        } catch (e) {
-          console.error('TTS proxy error:', e);
-          speakSpeechSynthesis(false);
-        }
+        return false;
       };
 
-      if (alertAudio) {
-        alertAudio.onerror = () => {
-          // Chime file missing or format unsupported — skip straight to TTS
-          speak();
-        };
-        alertAudio.onended = speak;
-        alertAudio.play()
-          .then(() => {
-            audioUnlockedRef.current = true;
-            setAudioUnlocked(true);
-          })
-          .catch(() => {
-            // Chime blocked — try to speak directly
-            speak();
-          });
-      } else {
-        speak();
+      if (voicePref === 'male') {
+        const success = speakSpeechSynthesis(true);
+        if (success) return;
       }
 
-      const durationMs = (config.duration || 10) * 1000;
-      activeTimeoutRef.current = setTimeout(() => {
-        setVisible(false);
-      }, durationMs);
+      try {
+        const absoluteTtsUrl = new URL(`/api/tts?text=${encodeURIComponent(ttsText)}`, window.location.origin).toString();
+        const ttsAudio = new Audio(absoluteTtsUrl);
+        ttsAudio.volume = 1.0;
+        ttsAudio.play()
+          .then(() => { audioUnlockedRef.current = true; setAudioUnlocked(true); })
+          .catch(() => speakSpeechSynthesis(false));
+      } catch (e) {
+        speakSpeechSynthesis(false);
+      }
+    };
 
-    }, 300);
-  }, [config]);
+    if (alertAudio) {
+      alertAudio.onerror = () => speak();
+      alertAudio.onended = speak;
+      alertAudio.play()
+        .then(() => { audioUnlockedRef.current = true; setAudioUnlocked(true); })
+        .catch(() => speak());
+    } else {
+      speak();
+    }
+
+    const durationMs = (config.duration || 10) * 1000;
+    activeTimeoutRef.current = setTimeout(() => {
+      setVisible(false);
+      // After the alert hides, wait a brief gap then process the next in queue
+      setTimeout(() => {
+        isPlayingAlertRef.current = false;
+        processQueue();
+      }, 500);
+    }, durationMs);
+  }, [config]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Process the next queued alert if not already playing
+  const processQueue = useCallback(() => {
+    if (isPlayingAlertRef.current) return;
+    if (alertQueueRef.current.length === 0) return;
+    const next = alertQueueRef.current.shift();
+    playAlert(next);
+  }, [playAlert]);
+
+  // Public: enqueue a donation for sequential playback
+  const triggerAlert = useCallback((donation) => {
+    alertQueueRef.current.push(donation);
+    processQueue();
+  }, [processQueue]);
 
   useEffect(() => {
     if (!config) return;
 
     async function pollPayment() {
       try {
-        const res = await fetch(`/api/payment/${username}`);
+        // Query with a 5-second overlap window to capture any transactions
+        // that occurred at the same millisecond or slightly delayed.
+        const since = lastAlertTimeRef.current > 0 ? Math.max(0, lastAlertTimeRef.current - 5000) : 0;
+        const res = await fetch(`/api/payment/${username}${since > 0 ? `?since=${since}` : ''}`);
         if (!res.ok) return;
 
-        const donation = await res.json();
-        
+        const result = await res.json();
+
         if (isFirstPollRef.current) {
           isFirstPollRef.current = false;
-          if (donation && donation.time) {
-            lastAlertTimeRef.current = donation.time;
-          } else {
-            lastAlertTimeRef.current = Date.now();
+          let baseline = Date.now();
+          if (Array.isArray(result)) {
+            if (result.length > 0) {
+              const latest = result[result.length - 1];
+              baseline = latest?.time || Date.now();
+              // Populate initial processed set so we don't trigger alerts for old history
+              result.forEach(d => {
+                const id = d._id || d.time;
+                if (id) processedIdsRef.current.add(id);
+              });
+            }
+          } else if (result) {
+            baseline = result.time || Date.now();
+            const id = result._id || result.time;
+            if (id) processedIdsRef.current.add(id);
           }
+          lastAlertTimeRef.current = baseline;
           return;
         }
 
-        if (!donation || !donation.time) return;
+        if (!Array.isArray(result)) return;
 
-        if (donation.time > lastAlertTimeRef.current) {
-          lastAlertTimeRef.current = donation.time;
-          triggerAlert(donation);
+        // Enqueue new unique donations
+        for (const donation of result) {
+          if (donation && donation.time) {
+            const id = donation._id || donation.time;
+            if (processedIdsRef.current.has(id)) {
+              continue; // Already processed
+            }
+            
+            // Mark as processed
+            processedIdsRef.current.add(id);
+            if (processedIdsRef.current.size > 200) {
+              // Prevent unbounded growth of processed set
+              const arr = Array.from(processedIdsRef.current);
+              processedIdsRef.current = new Set(arr.slice(arr.length - 100));
+            }
+
+            // Update baseline reference time to the newest seen timestamp
+            if (donation.time > lastAlertTimeRef.current) {
+              lastAlertTimeRef.current = donation.time;
+            }
+
+            triggerAlert(donation);
+          }
         }
+
       } catch (err) {
-        console.error("Overlay payment poll error:", err);
+        console.warn("Overlay payment poll error:", err.message);
       }
     }
 
