@@ -81,6 +81,10 @@ export default function OverlayPage() {
 
   useEffect(() => {
     async function loadConfig() {
+      // Offline guard: do not fetch if browser has no internet connection
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        return;
+      }
       try {
         const res = await fetch(`/api/overlay/config/${username}`);
         if (res.ok) {
@@ -88,7 +92,7 @@ export default function OverlayPage() {
           setConfig(data.alertConfig);
         }
       } catch (err) {
-        console.error("Failed to load overlay config:", err);
+        console.warn("Failed to load overlay config (temporary network issue):", err.message);
       }
     }
     loadConfig();
@@ -250,6 +254,10 @@ export default function OverlayPage() {
     if (!config) return;
 
     async function pollPayment() {
+      // Offline guard: do not fetch if browser has no internet connection
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        return;
+      }
       try {
         // Query with a 5-second overlap window to capture any transactions
         // that occurred at the same millisecond or slightly delayed.

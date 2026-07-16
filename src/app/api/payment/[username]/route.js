@@ -37,11 +37,16 @@ export async function GET(request, { params }) {
       .find({ streamer: targetUsername })
       .sort({ time: -1 })
       .limit(1)
-      .next() || {};
+      .next();
 
-    const latestPreview = lastPreviews[targetUsername] || {};
-    const realTime = latestReal.time || 0;
-    const previewTime = latestPreview.time || 0;
+    const latestPreview = lastPreviews[targetUsername];
+    const realTime = latestReal?.time || 0;
+    const previewTime = latestPreview?.time || 0;
+
+    if (realTime === 0 && previewTime === 0) {
+      // Eliminate browser-server clock skew by returning server's current timestamp as the baseline
+      return NextResponse.json({ time: Date.now(), isBaselineOnly: true });
+    }
 
     if (previewTime > realTime) {
       return NextResponse.json(latestPreview);

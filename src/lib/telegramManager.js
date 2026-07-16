@@ -78,23 +78,30 @@ export function setupTelegramListener(client, user) {
     // Skip messages sent by ourselves
     if (msg.out) return;
 
-    // Extract chat ID directly from peerId — works for all chat types
-    // peerId can be PeerChannel, PeerChat, or PeerUser
-    let chatIdRaw = null;
+    // Extract chat ID safely using multiple fallbacks (compatible with all GramJS event/peer types)
+    let chatIdRaw = "";
     try {
-      const peer = msg.peerId;
-      if (peer) {
-        // PeerChannel (supergroups/channels) → channelId
-        // PeerChat (basic groups) → chatId
-        // PeerUser (DMs) → userId
-        chatIdRaw = (peer.channelId || peer.chatId || peer.userId || '').toString();
+      if (event.chatId !== undefined && event.chatId !== null) {
+        chatIdRaw = event.chatId.toString();
+      } else if (msg.chatId !== undefined && msg.chatId !== null) {
+        chatIdRaw = msg.chatId.toString();
+      } else {
+        const peer = msg.peerId;
+        if (peer) {
+          const rawVal = peer.channelId || peer.chatId || peer.userId;
+          if (rawVal !== undefined && rawVal !== null) {
+            chatIdRaw = rawVal.toString();
+          }
+        }
       }
     } catch (e) {
-      console.error("Error reading peerId:", e);
-      return;
+      console.error("Error reading Telegram chatId:", e);
     }
 
-    if (!chatIdRaw) return;
+    if (!chatIdRaw) {
+      console.warn("Could not extract chatId from incoming Telegram message event.");
+      return;
+    }
 
     const cleanChatId = chatIdRaw.replace(/^-?100/, "").replace(/^-/, "");
 
