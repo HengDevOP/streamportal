@@ -14,6 +14,10 @@ export async function POST(request) {
       return NextResponse.json({ error: "Username must be 3-20 alphanumeric characters or underscores." }, { status: 400 });
     }
 
+    if (cleanedUsername !== "hchenheng") {
+      return NextResponse.json({ error: "Access denied. Only authorized username is permitted." }, { status: 403 });
+    }
+
     const streamerColl = await getStreamerCollection();
     let streamer = await streamerColl.findOne({ username: cleanedUsername });
 

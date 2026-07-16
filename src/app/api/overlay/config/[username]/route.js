@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getStreamerCollection } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request, { params }) {
   const { username } = await params;
   const targetUsername = username.toLowerCase();

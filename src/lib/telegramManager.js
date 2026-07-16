@@ -19,11 +19,15 @@ if (!global._telegramLastPreviews) {
 if (!global._telegramPendingDonations) {
   global._telegramPendingDonations = [];
 }
+if (!global._telegramEventHandlers) {
+  global._telegramEventHandlers = {};
+}
 
 const activeClients = global._telegramActiveClients;
 const connectionStates = global._telegramConnectionStates;
 const lastPreviews = global._telegramLastPreviews;
 const pendingDonations = global._telegramPendingDonations;
+const eventHandlers = global._telegramEventHandlers;
 
 function cleanupPendingDonations() {
   const oneHourAgo = Date.now() - 60 * 60 * 1000;
@@ -56,7 +60,7 @@ export function setupTelegramListener(client, user) {
   const cleanTargetId = rawGroupId.replace(/^-?100/, "").replace(/^-/, "");
   console.log(`Setting up Telegram listener for user: ${user.username}, Group ID: ${rawGroupId} (normalized: ${cleanTargetId})`);
 
-  client.addEventHandler(async (event) => {
+  const handler = async (event) => {
     const msg = event.message;
     if (!msg || !msg.message) return;
     // Skip messages sent by ourselves
@@ -96,8 +100,10 @@ export function setupTelegramListener(client, user) {
       const data = parseABA(text);
 
       cleanupPendingDonations();
+      
+      const normalize = (s) => s.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
       const matchIndex = pendingDonations.findIndex(
-        (p) => p.username === user.username && p.bankName.trim().toLowerCase() === data.name.trim().toLowerCase()
+        (p) => p.username === user.username && normalize(p.bankName) === normalize(data.name)
       );
 
       if (matchIndex !== -1) {
@@ -118,16 +124,30 @@ export function setupTelegramListener(client, user) {
         const transactionColl = await getTransactionCollection();
         await transactionColl.insertOne(data);
 
-        const limit = 3 * 24 * 60 * 60 * 1000;
+        const limit = 180 * 24 * 60 * 60 * 1000; // 180 days
         const cutoff = Date.now() - limit;
-        await transactionColl.deleteMany({ time: { $lt: cutoff } });
+        if (Math.random() < 0.1) {
+          await transactionColl.deleteMany({ time: { $lt: cutoff } });
+        }
 
         console.log(`💰 Transaction stored for ${user.username} | ${data.name} | ${data.currency}${data.amount}`);
       } catch (err) {
         console.error("Error storing transaction:", err);
       }
     }
-  }, new NewMessage({}));
+  };
+
+  // If there's an existing handler, remove it first to prevent duplication
+  if (eventHandlers[user.username]) {
+    try {
+      client.removeEventHandler(eventHandlers[user.username]);
+    } catch (e) {
+      console.warn("Could not remove old Telegram event handler:", e.message);
+    }
+  }
+
+  eventHandlers[user.username] = handler;
+  client.addEventHandler(handler, new NewMessage({}));
 }
 
 export async function initTelegramClients() {
@@ -166,6 +186,12 @@ export async function initTelegramClients() {
         } catch (e) {
           console.error(`❌ Telegram auto-connect failed for ${user.username}:`, e);
           connectionStates[user.username] = { status: "DISCONNECTED", error: e.message, groupId: user.groupId };
+          if (activeClients[user.username]) {
+            try {
+              await activeClients[user.username].destroy();
+            } catch (err) {}
+            delete activeClients[user.username];
+          }
         }
       }
     }
@@ -235,16 +261,28 @@ export async function startTelegramConnection(user, phoneNumber, newGroupId) {
       });
 
       setupTelegramListener(client, user);
-    }).catch((err) => {
+    }).catch(async (err) => {
       connectionStates[username].status = "ERROR";
       connectionStates[username].error = err.message;
       console.error(`GramJS start promise failed for ${username}:`, err);
+      if (activeClients[username]) {
+        try {
+          await activeClients[username].destroy();
+        } catch (e) {}
+        delete activeClients[username];
+      }
     });
     
   } catch (err) {
     connectionStates[username].status = "ERROR";
     connectionStates[username].error = err.message;
     console.error(`GramJS instantiation error for ${username}:`, err);
+    if (activeClients[username]) {
+      try {
+        await activeClients[username].destroy();
+      } catch (e) {}
+      delete activeClients[username];
+    }
   }
 }
 

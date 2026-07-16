@@ -8,7 +8,10 @@ export default function PricingPage() {
   const [isYearly, setIsYearly] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
 
+  const [menuOpen, setMenuOpen] = useState(false);
+
   useEffect(() => {
+    document.title = "Pricing Plans | StreamPortal";
     async function checkAuth() {
       try {
         const res = await fetch('/api/auth/me');
@@ -42,19 +45,40 @@ export default function PricingPage() {
       {/* NAVBAR */}
       <header className="navbar">
         <div className="nav-container">
-          <div className="nav-brand" onClick={handleBackToHome}>
-            <span className="brand-icon">⚡</span>
+          <div className="nav-brand" onClick={() => { handleBackToHome(); setMenuOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="brand-icon-svg" style={{ filter: 'drop-shadow(0 0 8px var(--primary-glow))' }}>
+              <rect width="32" height="32" rx="8" fill="url(#logo-grad-pricing)" />
+              <path d="M11 21L19 11M19 11H13M19 11V17" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <circle cx="16" cy="16" r="13" stroke="url(#stroke-grad-pricing)" strokeWidth="1.5" />
+              <defs>
+                <linearGradient id="logo-grad-pricing" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#8b5cf6" />
+                  <stop offset="1" stopColor="#ffb84d" />
+                </linearGradient>
+                <linearGradient id="stroke-grad-pricing" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#ffffff" stopOpacity="0.8" />
+                  <stop offset="1" stopColor="#ffffff" stopOpacity="0.2" />
+                </linearGradient>
+              </defs>
+            </svg>
             <span className="brand-text">StreamPortal</span>
           </div>
-          <nav className="nav-links">
-            <span onClick={handleBackToHome}>Home</span>
-            <span onClick={handleGetStarted}>Dashboard</span>
+
+          <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle Navigation">
+            <i className={menuOpen ? "fa-solid fa-xmark" : "fa-solid fa-bars"}></i>
+          </button>
+
+          <nav className={`nav-links ${menuOpen ? 'active' : ''}`}>
+            <span onClick={() => { router.push('/#hero'); setMenuOpen(false); }}>Home</span>
+            <span onClick={() => { router.push('/#features'); setMenuOpen(false); }}>Features</span>
+            <span onClick={() => { router.push('/#how-it-works'); setMenuOpen(false); }}>How it Works</span>
+            <span className="active" onClick={() => { router.push('/pricing'); setMenuOpen(false); }}>Pricing</span>
             {currentUser ? (
-              <button className="nav-btn" onClick={() => router.push('/dashboard')} style={{ borderColor: 'var(--primary)' }}>
-                👤 {currentUser}
+              <button className="nav-btn" onClick={() => { router.push('/dashboard'); setMenuOpen(false); }} style={{ borderColor: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <i className="fa-solid fa-gauge"></i> Dashboard
               </button>
             ) : (
-              <button className="nav-btn" onClick={() => window.location.href = '/api/auth/google'}>Login</button>
+              <button className="nav-btn" onClick={() => { window.location.href = '/api/auth/google'; setMenuOpen(false); }}>Login</button>
             )}
           </nav>
         </div>
@@ -299,6 +323,22 @@ export default function PricingPage() {
           -webkit-text-fill-color: transparent;
         }
 
+        /* Menu Toggle Button */
+        .menu-toggle {
+          display: none;
+          background: none;
+          border: none;
+          color: #ffffff;
+          font-size: 22px;
+          cursor: pointer;
+          transition: color 0.2s;
+          z-index: 102;
+        }
+
+        .menu-toggle:hover {
+          color: var(--primary);
+        }
+
         .nav-links {
           display: flex;
           align-items: center;
@@ -306,15 +346,35 @@ export default function PricingPage() {
         }
 
         .nav-links span {
+          position: relative;
           cursor: pointer;
           color: var(--text-muted);
           font-weight: 600;
           font-size: 15px;
           transition: color 0.3s;
+          padding: 4px 0;
         }
 
-        .nav-links span:hover {
+        .nav-links span:hover,
+        .nav-links span.active {
           color: #ffffff;
+        }
+
+        .nav-links span::after {
+          content: '';
+          position: absolute;
+          bottom: -4px;
+          left: 0;
+          width: 0;
+          height: 2px;
+          background: var(--primary);
+          transition: width 0.3s ease;
+          box-shadow: 0 0 8px var(--primary-glow);
+        }
+
+        .nav-links span:hover::after,
+        .nav-links span.active::after {
+          width: 100%;
         }
 
         .nav-btn {
@@ -600,6 +660,84 @@ export default function PricingPage() {
           font-size: 13px;
           position: relative;
           z-index: 1;
+        }
+
+        @media (max-width: 768px) {
+          .menu-toggle {
+            display: block;
+          }
+
+          .nav-links {
+            position: fixed;
+            top: -100%;
+            left: 0;
+            width: 100%;
+            height: auto;
+            max-height: 85vh;
+            background: rgba(12, 10, 22, 0.98);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            border-bottom: 1px solid var(--border);
+            border-left: none;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: center;
+            gap: 25px;
+            padding: 90px 40px 40px 40px;
+            opacity: 0;
+            visibility: hidden;
+            transition: top 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, visibility 0.3s ease;
+            z-index: 100;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+          }
+
+          .nav-links.active {
+            top: 0;
+            opacity: 1;
+            visibility: visible;
+          }
+
+          .nav-links span {
+            font-size: 18px;
+            width: 100%;
+            text-align: center;
+            padding: 10px 0;
+          }
+
+          .nav-links span::after {
+            bottom: 0;
+          }
+
+          .nav-btn {
+            width: 100%;
+            justify-content: center;
+            padding: 12px 24px;
+            font-size: 16px;
+          }
+
+          .pricing-header-section {
+            padding-top: 120px;
+            padding-bottom: 30px;
+          }
+
+          .pricing-title {
+            font-size: 32px;
+            line-height: 1.2;
+          }
+
+          .pricing-subtitle {
+            font-size: 15px;
+            margin-bottom: 20px;
+          }
+
+          .pricing-cards-grid {
+            grid-template-columns: 1fr;
+            gap: 20px;
+          }
+
+          .pricing-card {
+            padding: 30px 20px;
+          }
         }
       `}} />
     </>

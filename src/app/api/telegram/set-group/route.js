@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { getStreamerCollection } from "@/lib/db";
-import { activeClients, setupTelegramListener } from "@/lib/telegramManager";
+import { activeClients, setupTelegramListener, connectionStates } from "@/lib/telegramManager";
 
 export async function POST(request) {
   const username = await getSession();
@@ -25,15 +25,14 @@ export async function POST(request) {
     await streamerColl.updateOne({ username }, { $set: { groupId } });
     user.groupId = groupId;
 
+    // Keep connection state in memory synchronized
+    if (connectionStates && connectionStates[username]) {
+      connectionStates[username].groupId = groupId;
+    }
+
     // Refresh listener for the active client in memory
     const client = activeClients[username];
     if (client) {
-      try {
-        // Clear all old event handlers to prevent duplication
-        client.removeEventHandler();
-      } catch (e) {
-        console.warn("Could not remove old Telegram event handlers:", e.message);
-      }
       setupTelegramListener(client, user);
     }
 

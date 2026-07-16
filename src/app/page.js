@@ -10,7 +10,20 @@ export default function LandingPage() {
   const [loading, setLoading] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
 
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState('hero');
+
+  // Simulated Overlay Alert Config
+  const [alertVisible, setAlertVisible] = useState(true);
+  const [activeAlert, setActiveAlert] = useState({
+    name: "Sok Mean",
+    amount: "25.00",
+    currency: "$",
+    message: "Keep up the amazing work! Love the stream! 💖"
+  });
+
   useEffect(() => {
+    document.title = "StreamPortal - Next-Gen Live Stream Alerts & ABA bank receipts Integration";
     async function checkAuth() {
       try {
         const res = await fetch('/api/auth/me');
@@ -25,6 +38,68 @@ export default function LandingPage() {
       }
     }
     checkAuth();
+  }, []);
+
+  useEffect(() => {
+    const donors = ["Sok Mean", "Dara Roth", "Chea Vanna", "Roth Dev", "Heng Streamer", "Kosal", "Vibol", "Leakhena", "Bopha", "Seyha"];
+    const dollarAmounts = ["5.00", "10.00", "25.00", "50.00", "100.00"];
+    const rielAmounts = ["20,000", "40,000", "100,000", "200,000", "400,000"];
+    const messages = [
+      "Keep up the amazing work! Love the stream! 💖",
+      "សួស្ដីបង! ចូលចិត្តទស្សនាវីដេអូបងណាស់! ស៊ូស៊ូ! 👍",
+      "Awesome overlay system! Works perfectly on localhost! 🚀",
+      "ជូនពរបងជោគជ័យ និងសុខភាពល្អ! 💵✨",
+      "Play next song please! 🎵",
+      "Love from Phnom Penh! 🇰🇭"
+    ];
+
+    const interval = setInterval(() => {
+      setAlertVisible(false);
+
+      setTimeout(() => {
+        const isDollar = Math.random() > 0.4;
+        const randomName = donors[Math.floor(Math.random() * donors.length)];
+        const randomCurrency = isDollar ? "$" : "៛";
+        const randomAmount = isDollar 
+          ? dollarAmounts[Math.floor(Math.random() * dollarAmounts.length)]
+          : rielAmounts[Math.floor(Math.random() * rielAmounts.length)];
+        const randomMsg = messages[Math.floor(Math.random() * messages.length)];
+
+        setActiveAlert({
+          name: randomName,
+          amount: randomAmount,
+          currency: randomCurrency,
+          message: randomMsg
+        });
+
+        setAlertVisible(true);
+      }, 600);
+    }, 4500);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const sections = ['hero', 'features', 'how-it-works'];
+      const scrollPosition = window.scrollY + 200; // Offset for navbar
+
+      for (const section of sections) {
+        const el = document.getElementById(section);
+        if (el) {
+          const top = el.offsetTop;
+          const height = el.offsetHeight;
+          if (scrollPosition >= top && scrollPosition < top + height) {
+            setActiveSection(section);
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    handleScroll(); // Initial check
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   async function handleLogin(e) {
@@ -79,20 +154,40 @@ export default function LandingPage() {
       {/* NAVBAR */}
       <header className="navbar">
         <div className="nav-container">
-          <div className="nav-brand" onClick={() => scrollToSection('hero')}>
-            <i className="fa-solid fa-bolt brand-icon" style={{ color: 'var(--primary)', marginRight: '8px', fontSize: '18px' }}></i>
+          <div className="nav-brand" onClick={() => { scrollToSection('hero'); setMenuOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="brand-icon-svg" style={{ filter: 'drop-shadow(0 0 8px var(--primary-glow))' }}>
+              <rect width="32" height="32" rx="8" fill="url(#logo-grad-home)" />
+              <path d="M11 21L19 11M19 11H13M19 11V17" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <circle cx="16" cy="16" r="13" stroke="url(#stroke-grad-home)" strokeWidth="1.5" />
+              <defs>
+                <linearGradient id="logo-grad-home" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#8b5cf6" />
+                  <stop offset="1" stopColor="#ffb84d" />
+                </linearGradient>
+                <linearGradient id="stroke-grad-home" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#ffffff" stopOpacity="0.8" />
+                  <stop offset="1" stopColor="#ffffff" stopOpacity="0.2" />
+                </linearGradient>
+              </defs>
+            </svg>
             <span className="brand-text">StreamPortal</span>
           </div>
-          <nav className="nav-links">
-            <span onClick={() => scrollToSection('features')}>Features</span>
-            <span onClick={() => scrollToSection('how-it-works')}>How it Works</span>
-            <span onClick={() => router.push('/pricing')}>Pricing</span>
+
+          <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle Navigation">
+            <i className={menuOpen ? "fa-solid fa-xmark" : "fa-solid fa-bars"}></i>
+          </button>
+
+          <nav className={`nav-links ${menuOpen ? 'active' : ''}`}>
+            <span className={activeSection === 'hero' ? 'active' : ''} onClick={() => { scrollToSection('hero'); setMenuOpen(false); }}>Home</span>
+            <span className={activeSection === 'features' ? 'active' : ''} onClick={() => { scrollToSection('features'); setMenuOpen(false); }}>Features</span>
+            <span className={activeSection === 'how-it-works' ? 'active' : ''} onClick={() => { scrollToSection('how-it-works'); setMenuOpen(false); }}>How it Works</span>
+            <span onClick={() => { router.push('/pricing'); setMenuOpen(false); }}>Pricing</span>
             {currentUser ? (
-              <button className="nav-btn" onClick={() => router.push('/dashboard')} style={{ borderColor: 'var(--primary)' }}>
-                <i className="fa-solid fa-circle-user" style={{ marginRight: '6px' }}></i> {currentUser}
+              <button className="nav-btn" onClick={() => { router.push('/dashboard'); setMenuOpen(false); }} style={{ borderColor: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <i className="fa-solid fa-gauge"></i> Dashboard
               </button>
             ) : (
-              <button className="nav-btn" onClick={() => window.location.href = '/api/auth/google'}>Login</button>
+              <button className="nav-btn" onClick={() => { window.location.href = '/api/auth/google'; setMenuOpen(false); }}>Login</button>
             )}
           </nav>
         </div>
@@ -119,21 +214,42 @@ export default function LandingPage() {
 
           {/* Interactive OBS Alert Mockup */}
           <div className="alert-mockup-wrapper">
-            <div className="alert-mockup">
+            <div className={`alert-mockup ${alertVisible ? 'active' : ''}`} style={{ transition: 'all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)' }}>
               <div className="mockup-header">
                 <span className="dot dot-r"></span>
                 <span className="dot dot-y"></span>
                 <span className="dot dot-g"></span>
-                <span className="mockup-title">OBS overlay preview</span>
+                <span className="mockup-title">OBS overlay live preview</span>
               </div>
-              <div className="mockup-body">
-                <div className="alert-badge-preview">
-                  <i className="fa-solid fa-bell" style={{ marginRight: '6px' }}></i> NEW DONATION
-                </div>
-                <h3 className="alert-preview-title">✨ Thank you for the support! ✨</h3>
-                <div className="alert-preview-donor">Sok Mean</div>
-                <div className="alert-preview-amount">$25.00</div>
-                <p className="alert-preview-msg">💬 Keep up the amazing work! Love the stream! 💖</p>
+              <div className="mockup-body" style={{ padding: '30px', minHeight: '180px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <div 
+                  className="alert-text-line" 
+                  style={{
+                    fontSize: '20px',
+                    fontWeight: '900',
+                    lineHeight: '1.4',
+                    marginBottom: '12px',
+                    color: '#ffffff',
+                    textShadow: '0 2px 10px rgba(0, 0, 0, 0.95)'
+                  }}
+                  dangerouslySetInnerHTML={{
+                    __html: `<strong>${activeAlert.name}</strong> donated <strong style="color: #69f0ae; text-shadow: 0 0 12px rgba(105,240,174,0.6);">${activeAlert.currency}${activeAlert.amount}</strong> through super chat!`
+                  }}
+                />
+                {activeAlert.message && (
+                  <div className="message-box" style={{ 
+                    fontSize: '15px',
+                    fontWeight: '700',
+                    color: '#ffb84d',
+                    padding: '8px 0',
+                    lineHeight: '1.4',
+                    textAlign: 'center',
+                    wordBreak: 'break-word',
+                    textShadow: '0 2px 8px rgba(0,0,0,0.95)'
+                  }}>
+                    💬 <span>{activeAlert.message}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -313,6 +429,28 @@ export default function LandingPage() {
           --text-muted: rgba(255, 255, 255, 0.5);
         }
 
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes floatMockup {
+          0% { transform: translateY(0px) rotateX(8deg); }
+          50% { transform: translateY(-12px) rotateX(10deg); }
+          100% { transform: translateY(0px) rotateX(8deg); }
+        }
+
+        @keyframes pulseGlow {
+          0%, 100% { opacity: 0.08; transform: translateX(-50%) scale(1); }
+          50% { opacity: 0.12; transform: translateX(-50%) scale(1.05); }
+        }
+
         * {
           box-sizing: border-box;
           margin: 0;
@@ -343,6 +481,7 @@ export default function LandingPage() {
           transform: translateX(-50%);
           z-index: 0;
           pointer-events: none;
+          animation: pulseGlow 8s ease-in-out infinite;
         }
 
         .bg-glow-bottom {
@@ -400,6 +539,22 @@ export default function LandingPage() {
           -webkit-text-fill-color: transparent;
         }
 
+        /* Menu Toggle Button */
+        .menu-toggle {
+          display: none;
+          background: none;
+          border: none;
+          color: #ffffff;
+          font-size: 22px;
+          cursor: pointer;
+          transition: color 0.2s;
+          z-index: 102;
+        }
+
+        .menu-toggle:hover {
+          color: var(--primary);
+        }
+
         .nav-links {
           display: flex;
           align-items: center;
@@ -407,15 +562,35 @@ export default function LandingPage() {
         }
 
         .nav-links span {
+          position: relative;
           cursor: pointer;
           color: var(--text-muted);
           font-weight: 600;
           font-size: 15px;
           transition: color 0.3s;
+          padding: 4px 0;
         }
 
-        .nav-links span:hover {
+        .nav-links span:hover,
+        .nav-links span.active {
           color: #ffffff;
+        }
+
+        .nav-links span::after {
+          content: '';
+          position: absolute;
+          bottom: -4px;
+          left: 0;
+          width: 0;
+          height: 2px;
+          background: var(--primary);
+          transition: width 0.3s ease;
+          box-shadow: 0 0 8px var(--primary-glow);
+        }
+
+        .nav-links span:hover::after,
+        .nav-links span.active::after {
+          width: 100%;
         }
 
         .nav-btn {
@@ -542,13 +717,21 @@ export default function LandingPage() {
           border: 2px solid var(--accent);
           border-radius: 20px;
           box-shadow: 0 30px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(255, 184, 77, 0.1);
-          transform: rotateX(10deg);
+          transform: translateY(20px) rotateX(8deg) scale(0.95);
+          opacity: 0;
           overflow: hidden;
-          transition: transform 0.5s;
+          transition: transform 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.6s ease;
         }
 
-        .alert-mockup:hover {
-          transform: rotateX(0deg) scale(1.02);
+        .alert-mockup.active {
+          opacity: 1;
+          transform: translateY(0) rotateX(8deg) scale(1);
+          animation: floatMockup 4s ease-in-out infinite;
+        }
+
+        .alert-mockup.active:hover {
+          transform: translateY(0) rotateX(0deg) scale(1.02);
+          animation: none;
         }
 
         .mockup-header {
@@ -700,6 +883,98 @@ export default function LandingPage() {
         }
 
         @media (max-width: 768px) {
+          .menu-toggle {
+            display: block;
+          }
+
+          .nav-links {
+            position: fixed;
+            top: -100%;
+            left: 0;
+            width: 100%;
+            height: auto;
+            max-height: 85vh;
+            background: rgba(12, 10, 22, 0.98);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            border-bottom: 1px solid var(--border);
+            border-left: none;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: center;
+            gap: 25px;
+            padding: 90px 40px 40px 40px;
+            opacity: 0;
+            visibility: hidden;
+            transition: top 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, visibility 0.3s ease;
+            z-index: 100;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+          }
+
+          .nav-links.active {
+            top: 0;
+            opacity: 1;
+            visibility: visible;
+          }
+
+          .nav-links span {
+            font-size: 18px;
+            width: 100%;
+            text-align: center;
+            padding: 10px 0;
+          }
+
+          .nav-links span::after {
+            bottom: 0;
+          }
+
+          .nav-btn {
+            width: 100%;
+            justify-content: center;
+            padding: 12px 24px;
+            font-size: 16px;
+          }
+
+          .hero-section {
+            padding-top: 120px;
+            padding-bottom: 60px;
+          }
+
+          .hero-title {
+            font-size: 34px;
+            line-height: 1.2;
+          }
+
+          .hero-subtitle {
+            font-size: 15px;
+            margin-bottom: 30px;
+          }
+
+          .hero-ctas {
+            flex-direction: column;
+            gap: 12px;
+            align-items: stretch;
+            padding: 0 10px;
+          }
+
+          .btn-primary, .btn-secondary {
+            padding: 14px 24px;
+            font-size: 15px;
+            width: 100%;
+          }
+
+          .alert-mockup {
+            transform: none !important;
+          }
+
+          .section-title {
+            font-size: 28px;
+          }
+
+          .portal-container {
+            padding: 30px 20px;
+          }
+
           .steps-container {
             flex-direction: column;
           }

@@ -9,7 +9,8 @@ export async function GET(request) {
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = "http://localhost:3000/api/auth/google";
+  const url = new URL(request.url);
+  const redirectUri = `${url.protocol}//${url.host}/api/auth/google`;
 
   if (error) {
     console.error("Google OAuth error parameter:", error);
@@ -59,6 +60,11 @@ export async function GET(request) {
     const email = profile.email;
     if (!email) {
       return NextResponse.redirect(new URL("/?error=no_email", request.url));
+    }
+
+    if (email.toLowerCase() !== "hchenheng@gmail.com") {
+      console.warn(`Unauthorized login attempt blocked for: ${email}`);
+      return NextResponse.redirect(new URL("/?error=unauthorized_email", request.url));
     }
 
     // Form username from email (e.g. sok.mean@gmail.com -> sok_mean)

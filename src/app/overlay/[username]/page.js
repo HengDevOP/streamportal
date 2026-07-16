@@ -20,6 +20,7 @@ export default function OverlayPage() {
   const lastAlertTimeRef = useRef(0);
   const activeTimeoutRef = useRef(null);
   const audioUnlockedRef = useRef(false);
+  const isFirstPollRef = useRef(true);
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -270,6 +271,17 @@ export default function OverlayPage() {
         if (!res.ok) return;
 
         const donation = await res.json();
+        
+        if (isFirstPollRef.current) {
+          isFirstPollRef.current = false;
+          if (donation && donation.time) {
+            lastAlertTimeRef.current = donation.time;
+          } else {
+            lastAlertTimeRef.current = Date.now();
+          }
+          return;
+        }
+
         if (!donation || !donation.time) return;
 
         if (donation.time > lastAlertTimeRef.current) {

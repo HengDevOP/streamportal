@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getTransactionCollection } from "@/lib/db";
 import { lastPreviews } from "@/lib/telegramManager";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request, { params }) {
   try {
     const { username } = await params;
