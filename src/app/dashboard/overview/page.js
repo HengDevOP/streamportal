@@ -57,6 +57,9 @@ export default function DashboardPage() {
   const [hasStartedAuth, setHasStartedAuth] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConfirmDisconnectOpen, setIsConfirmDisconnectOpen] = useState(false);
+  const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [testAmount, setTestAmount] = useState('10');
 
   useEffect(() => {
     if (telStatus === 'NEED_CODE') {
@@ -112,10 +115,10 @@ export default function DashboardPage() {
         const data = await res.json();
         if (res.ok) {
           const baseUri = `${window.location.protocol}//${window.location.host}`;
-          setObsLink(`${baseUri}/overlay/${data.username}`);
-          setDonationLink(`${baseUri}/donate/${data.username}`);
-          setTopDonationLink(`${baseUri}/topdonation/${data.username}`);
-          setIframeSrc(`${baseUri}/overlay/${data.username}`);
+          setObsLink(`${baseUri}/overlay/khmc`);
+          setDonationLink(`${baseUri}/donate/khmc`);
+          setTopDonationLink(`${baseUri}/topdonation/khmc`);
+          setIframeSrc(`${baseUri}/overlay/khmc`);
 
           const config = data.alertConfig || {};
           setPrimaryColor(config.primaryColor || '#ffb84d');
@@ -144,24 +147,39 @@ export default function DashboardPage() {
     if (!myUsername || myUsername === 'Loading...') return;
 
     async function poll() {
+      if (typeof window !== 'undefined' && !navigator.onLine) return;
       try {
         const res = await fetch('/api/telegram/status', { cache: 'no-store' });
+        if (!res.ok) {
+          if (res.status === 401) {
+            router.push('/login');
+          }
+          return;
+        }
         const data = await res.json();
         setTelStatus(data.status);
         setTelError(data.error || '');
         setTelGroupId(data.groupId || '');
       } catch (e) {
-        console.error("Status poll error:", e);
+        // Silent error for standard fetch failures during restarts/offline
+        console.warn("Status poll warning:", e.message || e);
       }
     }
 
     async function fetchLogs() {
+      if (typeof window !== 'undefined' && !navigator.onLine) return;
       try {
         const res = await fetch(`/api/all-donations/${myUsername}`, { cache: 'no-store' });
+        if (!res.ok) {
+          if (res.status === 401) {
+            router.push('/login');
+          }
+          return;
+        }
         const data = await res.json();
         setLogs(data || []);
       } catch (e) {
-        console.error("Error fetching logs:", e);
+        console.warn("Logs poll warning:", e.message || e);
       }
     }
 
@@ -174,7 +192,7 @@ export default function DashboardPage() {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [myUsername]);
+  }, [myUsername, router]);
 
   async function connectTelegram(e) {
     if (e) e.preventDefault();
@@ -326,6 +344,23 @@ export default function DashboardPage() {
     }
   }
 
+  async function confirmClearDonations() {
+    setIsClearing(true);
+    try {
+      const res = await fetch('/api/top-donations/clear', { method: 'POST' });
+      if (res.ok) {
+        setLogs([]);
+        setIsConfirmClearOpen(false);
+      } else {
+        console.error("Failed to clear top donations");
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsClearing(false);
+    }
+  }
+
   async function saveSettings(e) {
     if (e) e.preventDefault();
     
@@ -400,7 +435,7 @@ export default function DashboardPage() {
         body: JSON.stringify({
           name: testDonorName,
           message: testDonorMessage,
-          amount: 10,
+          amount: parseFloat(testAmount || '10'),
           currency: "$"
         })
       });
@@ -738,9 +773,45 @@ export default function DashboardPage() {
                 <label htmlFor="testDonorMessage" style={{ fontSize: '12px', marginBottom: '6px', display: 'block' }}>Test Supporter Comment</label>
                 <input type="text" id="testDonorMessage" className="input-control" value={testDonorMessage} onChange={(e) => setTestDonorMessage(e.target.value)} style={{ padding: '8px 12px', fontSize: '13.5px' }} />
               </div>
-              <button className="btn btn-primary" style={{ width: '100%', padding: '10px', fontSize: '13.5px' }} onClick={triggerTestAlert}>
-                <i className="fa-solid fa-volume-high" style={{ marginRight: '8px' }}></i> Trigger Preview Alert
-              </button>
+              <div className="form-group" style={{ marginBottom: '20px' }}>
+                <label style={{ fontSize: '12px', marginBottom: '8px', display: 'block' }}>Test Donation Amount</label>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {['0.1', '0.5', '1', '2', '5', '10', '50'].map(val => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setTestAmount(val)}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '12.5px',
+                        borderRadius: '20px',
+                        border: '1px solid',
+                        borderColor: testAmount === val ? 'var(--primary)' : 'rgba(255,255,255,0.1)',
+                        background: testAmount === val ? 'rgba(0,230,118,0.15)' : 'rgba(255,255,255,0.02)',
+                        color: testAmount === val ? 'var(--primary)' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        fontWeight: testAmount === val ? '700' : 'normal',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      ${val}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button className="btn btn-primary" style={{ flex: 1.2, padding: '10px', fontSize: '13.5px' }} onClick={triggerTestAlert}>
+                  <i className="fa-solid fa-volume-high" style={{ marginRight: '8px' }}></i> Trigger Preview Alert
+                </button>
+                <button 
+                  type="button"
+                  className="btn btn-secondary" 
+                  style={{ flex: 0.8, borderColor: 'rgba(255,82,82,0.3)', color: '#ff5252', padding: '10px', fontSize: '13.5px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }} 
+                  onClick={() => setIsConfirmClearOpen(true)}
+                >
+                  <i className="fa-solid fa-trash-can"></i> Clear Top & Logs
+                </button>
+              </div>
             </div>
 
             {/* 3. Visual Theme Style Customizer */}
@@ -1509,6 +1580,55 @@ export default function DashboardPage() {
                 onClick={() => setIsConfirmDisconnectOpen(false)}
                 style={{ flex: 1 }}
                 disabled={isConnecting}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* MODAL 3: CONFIRM CLEAR DONATIONS */}
+      <div className={`modal-overlay ${isConfirmClearOpen ? 'active' : ''}`} onClick={() => setIsConfirmClearOpen(false)} style={{ zIndex: 1100 }}>
+        <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px', border: '1px solid rgba(255, 82, 82, 0.15)' }}>
+          <div className="modal-header" style={{ borderBottom: '1px solid rgba(255, 82, 82, 0.05)' }}>
+            <h3 style={{ color: '#ff5252', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <i className="fa-solid fa-triangle-exclamation"></i>
+              Clear All Donations?
+            </h3>
+            <button className="modal-close" onClick={() => setIsConfirmClearOpen(false)}>✕</button>
+          </div>
+          <div className="modal-body" style={{ padding: '24px', textAlign: 'center' }}>
+            <p style={{ fontSize: '13.5px', color: 'var(--text-muted)', lineHeight: '1.5', marginBottom: '24px' }}>
+              Are you sure you want to clear your top donations leaderboard and transaction logs? This action is permanent and cannot be undone.
+            </p>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button 
+                type="button"
+                className="btn btn-primary" 
+                onClick={confirmClearDonations}
+                style={{ flex: 1, background: '#ff5252', borderColor: '#ff5252', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                disabled={isClearing}
+              >
+                {isClearing ? (
+                  <>
+                    <div className="spinner-ring" style={{ width: '14px', height: '14px', border: '2px solid rgba(255,255,255,0.2)', borderLeftColor: '#fff', animation: 'spin-loader 1s linear infinite' }}></div>
+                    Clearing...
+                  </>
+                ) : (
+                  <>
+                    <i className="fa-solid fa-trash-can"></i>
+                    Yes, Clear Data
+                  </>
+                )}
+              </button>
+              <button 
+                type="button"
+                className="btn btn-secondary" 
+                onClick={() => setIsConfirmClearOpen(false)}
+                style={{ flex: 1 }}
+                disabled={isClearing}
               >
                 Cancel
               </button>

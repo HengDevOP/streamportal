@@ -14,7 +14,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Username must be 3-20 alphanumeric characters or underscores." }, { status: 400 });
     }
 
-    if (cleanedUsername !== "hchenheng") {
+    if (cleanedUsername !== "khmc") {
       return NextResponse.json({ error: "Access denied. Only authorized username is permitted." }, { status: 403 });
     }
 
@@ -40,7 +40,8 @@ export async function POST(request) {
           fontFamily: "Outfit",
           soundUrl: "/uploads/sounds/sound.mp3",
           ttsTemplate: "{donator} donated {amount} through superchat.",
-          alertTemplate: "{donator} donated {amount} through super chat!"
+          alertTemplate: "{donator} donated {amount} through super chat!",
+          qrUrl: "/uploads/qrs/khmc.jpg"
         }
       };
       await streamerColl.insertOne(streamer);

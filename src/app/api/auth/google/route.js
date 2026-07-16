@@ -67,9 +67,8 @@ export async function GET(request) {
       return NextResponse.redirect(new URL("/?error=unauthorized_email", request.url));
     }
 
-    // Form username from email (e.g. sok.mean@gmail.com -> sok_mean)
-    let username = email.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
-    if (username.length < 3) username = username + "_user";
+    // Always use the fixed username for this authorized account
+    const username = "khmc";
 
     const streamerColl = await getStreamerCollection();
     let streamer = await streamerColl.findOne({ email });
@@ -98,7 +97,8 @@ export async function GET(request) {
           fontFamily: "Outfit",
           soundUrl: "/uploads/sounds/sound.mp3",
           ttsTemplate: "{donator} donated {amount} through superchat.",
-          alertTemplate: "{donator} donated {amount} through super chat!"
+          alertTemplate: "{donator} donated {amount} through super chat!",
+          qrUrl: "/uploads/qrs/khmc.jpg"
         }
       };
       await streamerColl.insertOne(streamer);
@@ -106,7 +106,7 @@ export async function GET(request) {
       if (!streamer.email) {
         await streamerColl.updateOne({ username: streamer.username }, { $set: { email } });
       }
-      username = streamer.username;
+      // Always use the canonical username
     }
 
     await setSession(username);
