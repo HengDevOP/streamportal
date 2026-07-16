@@ -28,7 +28,8 @@ export async function POST() {
   await streamerColl.updateOne({ username }, { 
     $set: { 
       telegramSession: "", 
-      telegramId: "" 
+      telegramId: "",
+      telegramStatus: "DISCONNECTED"
     } 
   });
 

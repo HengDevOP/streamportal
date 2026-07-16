@@ -16,7 +16,7 @@ export async function GET() {
   }
 
   const state = connectionStates[username] || { 
-    status: "DISCONNECTED", 
+    status: user.telegramStatus || "DISCONNECTED", 
     error: "", 
     groupId: user.groupId || "" 
   };

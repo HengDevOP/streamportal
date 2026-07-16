@@ -166,6 +166,7 @@ export async function initTelegramClients() {
 
           activeClients[user.username] = client;
           connectionStates[user.username] = { status: "CONNECTING", error: "", groupId: user.groupId };
+          await streamerColl.updateOne({ username: user.username }, { $set: { telegramStatus: "CONNECTING" } });
 
           await client.start({
             catchUp: true,
@@ -179,13 +180,19 @@ export async function initTelegramClients() {
           connectionStates[user.username].status = "CONNECTED";
           const me = await client.getMe();
           user.telegramId = me.id.toString();
-          await streamerColl.updateOne({ username: user.username }, { $set: { telegramId: user.telegramId } });
+          await streamerColl.updateOne({ username: user.username }, { 
+            $set: { 
+              telegramId: user.telegramId,
+              telegramStatus: "CONNECTED"
+            } 
+          });
 
           console.log(`✅ Telegram auto-connected successfully for ${user.username}!`);
           setupTelegramListener(client, user);
         } catch (e) {
           console.error(`❌ Telegram auto-connect failed for ${user.username}:`, e);
           connectionStates[user.username] = { status: "DISCONNECTED", error: e.message, groupId: user.groupId };
+          await streamerColl.updateOne({ username: user.username }, { $set: { telegramStatus: "DISCONNECTED" } });
           if (activeClients[user.username]) {
             try {
               await activeClients[user.username].destroy();
@@ -208,6 +215,9 @@ export async function startTelegramConnection(user, phoneNumber, newGroupId) {
     groupId: newGroupId
   };
 
+  const streamerColl = await getStreamerCollection();
+  await streamerColl.updateOne({ username }, { $set: { telegramStatus: "CONNECTING" } });
+
   if (activeClients[username]) {
     try {
       await activeClients[username].destroy();
@@ -229,12 +239,14 @@ export async function startTelegramConnection(user, phoneNumber, newGroupId) {
       phoneNumber: async () => phoneNumber,
       phoneCode: async () => {
         connectionStates[username].status = "NEED_CODE";
+        await streamerColl.updateOne({ username }, { $set: { telegramStatus: "NEED_CODE" } });
         return new Promise((resolve) => {
           connectionStates[username].phoneCodeResolver = resolve;
         });
       },
       password: async () => {
         connectionStates[username].status = "NEED_PASSWORD";
+        await streamerColl.updateOne({ username }, { $set: { telegramStatus: "NEED_PASSWORD" } });
         return new Promise((resolve) => {
           connectionStates[username].passwordResolver = resolve;
         });
@@ -252,11 +264,11 @@ export async function startTelegramConnection(user, phoneNumber, newGroupId) {
       user.telegramId = me.id.toString();
       user.telegramSession = client.session.save();
 
-      const streamerColl = await getStreamerCollection();
       await streamerColl.updateOne({ username }, { 
         $set: { 
           telegramId: user.telegramId, 
-          telegramSession: user.telegramSession 
+          telegramSession: user.telegramSession,
+          telegramStatus: "CONNECTED"
         } 
       });
 
@@ -265,6 +277,7 @@ export async function startTelegramConnection(user, phoneNumber, newGroupId) {
       connectionStates[username].status = "ERROR";
       connectionStates[username].error = err.message;
       console.error(`GramJS start promise failed for ${username}:`, err);
+      await streamerColl.updateOne({ username }, { $set: { telegramStatus: "DISCONNECTED" } });
       if (activeClients[username]) {
         try {
           await activeClients[username].destroy();
@@ -277,6 +290,7 @@ export async function startTelegramConnection(user, phoneNumber, newGroupId) {
     connectionStates[username].status = "ERROR";
     connectionStates[username].error = err.message;
     console.error(`GramJS instantiation error for ${username}:`, err);
+    await streamerColl.updateOne({ username }, { $set: { telegramStatus: "DISCONNECTED" } });
     if (activeClients[username]) {
       try {
         await activeClients[username].destroy();

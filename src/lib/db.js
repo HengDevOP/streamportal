@@ -7,7 +7,10 @@ if (!uri) {
 }
 
 if (!global._mongoClientPromise) {
-  const client = new MongoClient(uri);
+  const client = new MongoClient(uri, {
+    connectTimeoutMS: 5000,
+    serverSelectionTimeoutMS: 5000,
+  });
   global._mongoClientPromise = client.connect();
 }
 const clientPromise = global._mongoClientPromise;
